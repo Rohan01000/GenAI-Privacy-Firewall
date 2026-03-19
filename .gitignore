@@ -28,3 +28,5 @@ Thumbs.db
 
 # Keep models but exclude vocab with fake keys
 models/vocab.json
+.venv
+.venv/
