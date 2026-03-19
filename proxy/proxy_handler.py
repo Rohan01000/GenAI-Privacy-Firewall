@@ -22,7 +22,7 @@ detector = CombinedDetector(
     confidence_threshold=settings.confidence_threshold
 )
 redactor = RedactionEngine(confidence_threshold=settings.confidence_threshold)
-http_client = httpx.AsyncClient()
+http_client = httpx.AsyncClient(timeout=60.0)
 limiter = Limiter(key_func=get_remote_address)
 
 # In-memory rate limiting dictionary
@@ -102,7 +102,9 @@ async def chat_completions(request: Request, chat_request: ChatRequest):
         "Content-Type": "application/json",
         "X-Firewall-Processed": "true"
     }
-    if auth_header:
+    if settings.ollama_api_key:
+        forwarded_headers["Authorization"] = f"Bearer {settings.ollama_api_key}"
+    elif auth_header:
         forwarded_headers["Authorization"] = auth_header
 
     # Step 4b - Streaming response
@@ -159,7 +161,23 @@ async def chat_completions(request: Request, chat_request: ChatRequest):
                 redactor.cleanup(sid)
             raise HTTPException(status_code=502, detail="LLM API unavailable")
 
-        response_data = response.json()
+        # Handle Ollama NDJSON format
+        raw_text = response.text
+        if settings.ollama_api_key and "choices" not in raw_text:
+            full_content = ""
+            for line in raw_text.strip().split("\n"):
+                try:
+                    obj = json.loads(line)
+                    chunk = obj.get("message", {}).get("content", "")
+                    if chunk:
+                        full_content += chunk
+                except:
+                    continue
+            response_data = {
+                "choices": [{"message": {"content": full_content, "role": "assistant"}}]
+            }
+        else:
+            response_data = response.json()
         
         if "choices" in response_data and len(response_data["choices"]) > 0:
             llm_text = response_data["choices"][0]["message"].get("content", "")

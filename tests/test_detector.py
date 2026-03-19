@@ -13,7 +13,7 @@ def rule_detector():
     return RuleBasedDetector()
 
 @pytest.fixture
-@patch('ml_engine.combined_detector.ScratchNERInference')
+@patch('ml_engine.scratch_model.inference.ScratchNERInference')
 def combined_detector(mock_ml_inference):
     """
     Provides a CombinedDetector with the ML model mocked out 

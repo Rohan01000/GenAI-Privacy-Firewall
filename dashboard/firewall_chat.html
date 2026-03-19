@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GenAI Privacy Firewall — Chat</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --surface: #111118;
+            --surface2: #1a1a26;
+            --border: #2a2a40;
+            --accent: #00e5ff;
+            --accent2: #7c3aed;
+            --green: #00ff88;
+            --red: #ff4466;
+            --yellow: #ffcc00;
+            --text: #e8e8f0;
+            --muted: #6b6b8a;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Syne', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Animated grid background */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: 
+                linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        header {
+            position: relative;
+            z-index: 1;
+            padding: 20px 40px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(10,10,15,0.8);
+            backdrop-filter: blur(20px);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .logo-text {
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        .logo-text span { color: var(--accent); }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .model-badge {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: 0.5px;
+            border: 1px solid;
+        }
+
+        .model-badge.scratch {
+            background: rgba(255,204,0,0.1);
+            border-color: var(--yellow);
+            color: var(--yellow);
+        }
+
+        .model-badge.bert {
+            background: rgba(124,58,237,0.1);
+            border-color: var(--accent2);
+            color: var(--accent2);
+        }
+
+        .connection-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        main {
+            position: relative;
+            z-index: 1;
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 0;
+            height: calc(100vh - 73px);
+        }
+
+        /* Chat area */
+        .chat-area {
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .messages::-webkit-scrollbar { width: 4px; }
+        .messages::-webkit-scrollbar-track { background: transparent; }
+        .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+        .message {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .message-header .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .user .dot { background: var(--accent); }
+        .assistant .dot { background: var(--green); }
+        .system .dot { background: var(--yellow); }
+
+        .message-bubble {
+            padding: 16px 20px;
+            border-radius: 12px;
+            font-size: 15px;
+            line-height: 1.6;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            max-width: 85%;
+        }
+
+        .user .message-bubble {
+            align-self: flex-end;
+            background: rgba(0,229,255,0.05);
+            border-color: rgba(0,229,255,0.2);
+        }
+
+        .assistant .message-bubble {
+            background: rgba(0,255,136,0.05);
+            border-color: rgba(0,255,136,0.15);
+        }
+
+        .system .message-bubble {
+            background: var(--surface2);
+            border-color: var(--border);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+        }
+
+        /* Redaction details */
+        .redaction-details {
+            margin-top: 8px;
+            padding: 12px 16px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            max-width: 85%;
+        }
+
+        .redaction-details .label {
+            color: var(--muted);
+            margin-bottom: 6px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .redaction-details .redacted-text {
+            color: var(--yellow);
+            word-break: break-all;
+        }
+
+        .entity-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .entity-tag {
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .tag-SSN { background: rgba(255,68,102,0.15); color: var(--red); border: 1px solid rgba(255,68,102,0.3); }
+        .tag-EMAIL { background: rgba(0,229,255,0.1); color: var(--accent); border: 1px solid rgba(0,229,255,0.2); }
+        .tag-CREDIT_CARD { background: rgba(255,204,0,0.1); color: var(--yellow); border: 1px solid rgba(255,204,0,0.2); }
+        .tag-PERSON { background: rgba(0,255,136,0.1); color: var(--green); border: 1px solid rgba(0,255,136,0.2); }
+        .tag-API_KEY { background: rgba(124,58,237,0.15); color: #a78bfa; border: 1px solid rgba(124,58,237,0.3); }
+        .tag-PASSWORD { background: rgba(255,68,102,0.15); color: var(--red); border: 1px solid rgba(255,68,102,0.3); }
+        .tag-IP_ADDRESS { background: rgba(0,229,255,0.1); color: var(--accent); border: 1px solid rgba(0,229,255,0.2); }
+        .tag-PHONE { background: rgba(0,255,136,0.1); color: var(--green); border: 1px solid rgba(0,255,136,0.2); }
+        .tag-default { background: rgba(107,107,138,0.2); color: var(--muted); border: 1px solid var(--border); }
+
+        /* Input area */
+        .input-area {
+            padding: 20px 24px;
+            border-top: 1px solid var(--border);
+            background: rgba(10,10,15,0.9);
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        textarea {
+            flex: 1;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 18px;
+            color: var(--text);
+            font-family: 'Syne', sans-serif;
+            font-size: 15px;
+            resize: none;
+            outline: none;
+            min-height: 52px;
+            max-height: 200px;
+            transition: border-color 0.2s;
+            line-height: 1.5;
+        }
+
+        textarea:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px rgba(0,229,255,0.1);
+        }
+
+        textarea::placeholder { color: var(--muted); }
+
+        .send-btn {
+            width: 52px;
+            height: 52px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.15s, opacity 0.15s;
+            flex-shrink: 0;
+        }
+
+        .send-btn:hover { transform: scale(1.05); }
+        .send-btn:active { transform: scale(0.95); }
+        .send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+        .send-btn svg { width: 20px; height: 20px; fill: white; }
+
+        /* Sidebar */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            background: var(--surface);
+            overflow-y: auto;
+        }
+
+        .sidebar-section {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sidebar-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--muted);
+            margin-bottom: 16px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Config */
+        .config-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        .config-label {
+            font-size: 12px;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .config-input {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            outline: none;
+            width: 100%;
+            transition: border-color 0.2s;
+        }
+
+        .config-input:focus { border-color: var(--accent); }
+
+        select.config-input option { background: var(--surface2); }
+
+        .apply-btn {
+            width: 100%;
+            padding: 10px;
+            background: rgba(0,229,255,0.1);
+            border: 1px solid rgba(0,229,255,0.3);
+            border-radius: 8px;
+            color: var(--accent);
+            font-family: 'Syne', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 4px;
+        }
+
+        .apply-btn:hover { background: rgba(0,229,255,0.2); }
+
+        .toast {
+            margin-top: 8px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            text-align: center;
+            min-height: 16px;
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .stat-card {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .stat-label {
+            font-size: 10px;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 800;
+            margin-top: 4px;
+        }
+
+        .stat-value.blue { color: var(--accent); }
+        .stat-value.green { color: var(--green); }
+        .stat-value.red { color: var(--red); }
+        .stat-value.yellow { color: var(--yellow); }
+
+        /* Quick prompts */
+        .quick-prompts {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .quick-prompt-btn {
+            padding: 10px 14px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: 'Syne', sans-serif;
+            font-size: 12px;
+            cursor: pointer;
+            text-align: left;
+            transition: border-color 0.2s, background 0.2s;
+            line-height: 1.4;
+        }
+
+        .quick-prompt-btn:hover {
+            border-color: var(--accent);
+            background: rgba(0,229,255,0.05);
+        }
+
+        /* Empty state */
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            color: var(--muted);
+            padding: 40px;
+            text-align: center;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            opacity: 0.3;
+        }
+
+        .empty-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text);
+            opacity: 0.5;
+        }
+
+        .empty-sub {
+            font-size: 14px;
+            max-width: 300px;
+            line-height: 1.6;
+        }
+
+        /* Loading */
+        .loading-dots {
+            display: flex;
+            gap: 4px;
+            padding: 16px 20px;
+        }
+
+        .loading-dots span {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--green);
+            animation: bounce 1.2s infinite;
+        }
+
+        .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); opacity: 0.4; }
+            50% { transform: translateY(-6px); opacity: 1; }
+        }
+
+        .flow-arrow {
+            font-size: 11px;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', monospace;
+            padding: 4px 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .flow-arrow::before, .flow-arrow::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">
+        <div class="logo-icon">🛡️</div>
+        <div class="logo-text">Privacy<span>Firewall</span></div>
+    </div>
+    <div class="status-bar">
+        <div id="modelBadge" class="model-badge scratch">BiLSTM-CRF</div>
+        <div class="connection-dot" id="connDot" title="Connected"></div>
+    </div>
+</header>
+
+<main>
+    <div class="chat-area">
+        <div class="messages" id="messages">
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon">🔒</div>
+                <div class="empty-title">Privacy-Protected Chat</div>
+                <div class="empty-sub">Your messages are scanned for sensitive data before reaching the LLM. Try pasting a prompt with an SSN, email, or API key.</div>
+            </div>
+        </div>
+        <div class="input-area">
+            <div class="input-wrapper">
+                <textarea 
+                    id="promptInput" 
+                    placeholder="Type your prompt here... try including sensitive data like SSN 123-45-6789 or email john@acme.com"
+                    rows="1"
+                ></textarea>
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                    <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <div class="sidebar-section">
+            <div class="sidebar-title">⚙️ Configuration</div>
+            <div class="config-row">
+                <div class="config-label">Admin Key</div>
+                <input type="password" class="config-input" id="adminKey" placeholder="Enter admin key" value="ryuzaki">
+            </div>
+            <div class="config-row">
+                <div class="config-label">Proxy URL</div>
+                <input type="text" class="config-input" id="proxyUrl" value="http://localhost:8000">
+            </div>
+            <div class="config-row">
+                <div class="config-label">LLM Key (optional override)</div>
+                <input type="password" class="config-input" id="llmKey" placeholder="Leave empty — key loaded from server">
+            </div>
+            <div class="config-row">
+                <div class="config-label">Model Type</div>
+                <select class="config-input" id="modelType">
+                    <option value="scratch">BiLSTM-CRF (Fast)</option>
+                    <option value="bert">BERT (Accurate)</option>
+                </select>
+            </div>
+            <div class="config-row">
+                <div class="config-label">Confidence Threshold</div>
+                <input type="number" class="config-input" id="threshold" value="0.85" step="0.05" min="0" max="1">
+            </div>
+            <button class="apply-btn" onclick="applyConfig()">Apply Config</button>
+            <div class="toast" id="configToast"></div>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-title">📊 Live Stats</div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Requests</div>
+                    <div class="stat-value blue" id="statTotal">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Redacted</div>
+                    <div class="stat-value green" id="statEntities">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Blocked</div>
+                    <div class="stat-value red" id="statBlocked">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg ms</div>
+                    <div class="stat-value yellow" id="statLatency">0</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-title">⚡ Quick Prompts</div>
+            <div class="quick-prompts">
+                <button class="quick-prompt-btn" onclick="useQuickPrompt(this)">My SSN is 123-45-6789, is this format correct?</button>
+                <button class="quick-prompt-btn" onclick="useQuickPrompt(this)">Contact Sarah Johnson at sarah@acme.com about the Q4 report</button>
+                <button class="quick-prompt-btn" onclick="useQuickPrompt(this)">My AWS key is AKIAIOSFODNN7EXAMPLE, why won't it work?</button>
+                <button class="quick-prompt-btn" onclick="useQuickPrompt(this)">Card 4532-1234-5678-9012 keeps getting declined</button>
+                <button class="quick-prompt-btn" onclick="useQuickPrompt(this)">Debug: db.connect(password='Xk9#mNp2!@3') keeps failing</button>
+                <button class="quick-prompt-btn" onclick="useQuickPrompt(this)">User John Smith (SSN: 789-01-2345) from 192.168.1.50 needs help</button>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+    const BASE_URL = () => document.getElementById('proxyUrl').value || 'http://localhost:8000';
+    const ADMIN_KEY = () => document.getElementById('adminKey').value;
+    const LLM_KEY = () => document.getElementById('llmKey').value;
+    let requestCounter = 0;
+
+    // Auto-resize textarea
+    const textarea = document.getElementById('promptInput');
+    textarea.addEventListener('input', () => {
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+    });
+
+    // Send on Enter (Shift+Enter for newline)
+    textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    function useQuickPrompt(btn) {
+        textarea.value = btn.textContent;
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+        textarea.focus();
+    }
+
+    function getTagClass(entityType) {
+        const known = ['SSN', 'EMAIL', 'CREDIT_CARD', 'PERSON', 'API_KEY', 'PASSWORD', 'IP_ADDRESS', 'PHONE'];
+        return known.includes(entityType) ? `tag-${entityType}` : 'tag-default';
+    }
+
+    function addMessage(type, content, extra = null) {
+        const emptyState = document.getElementById('emptyState');
+        if (emptyState) emptyState.remove();
+
+        const messages = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = `message ${type}`;
+
+        const labels = { user: 'You', assistant: 'LLM Response', system: 'Firewall' };
+        
+        div.innerHTML = `
+            <div class="message-header">
+                <div class="dot"></div>
+                ${labels[type] || type}
+                <span style="margin-left:auto; font-size:10px;">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="message-bubble">${content}</div>
+        `;
+
+        if (extra) {
+            div.innerHTML += extra;
+        }
+
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+        return div;
+    }
+
+    function addLoadingMessage() {
+        const emptyState = document.getElementById('emptyState');
+        if (emptyState) emptyState.remove();
+
+        const messages = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = 'message assistant';
+        div.id = 'loadingMsg';
+        div.innerHTML = `
+            <div class="message-header">
+                <div class="dot"></div>
+                Processing...
+            </div>
+            <div class="loading-dots">
+                <span></span><span></span><span></span>
+            </div>
+        `;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('promptInput');
+        const prompt = input.value.trim();
+        if (!prompt) return;
+
+        const sendBtn = document.getElementById('sendBtn');
+        sendBtn.disabled = true;
+        input.value = '';
+        input.style.height = 'auto';
+
+        // Show user message
+        addMessage('user', prompt.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+
+        // Show loading
+        addLoadingMessage();
+
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${LLM_KEY() || 'test-key-' + (++requestCounter)}`
+        };
+
+        const payload = {
+            model: 'minimax-m2.5:cloud',
+            messages: [{ role: 'user', content: prompt }],
+            stream:false
+        };
+
+        try {
+            const res = await fetch(`${BASE_URL()}/v1/chat/completions`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(payload)
+            });
+
+            // Remove loading
+            document.getElementById('loadingMsg')?.remove();
+
+            if (res.status === 502) {
+                // LLM unavailable but redaction happened - show system message
+                addMessage('system', '⚠️ LLM API unavailable (no API key configured). Redaction still processed successfully. Check stats to see entities detected.');
+            } else if (!res.ok) {
+                const err = await res.json();
+                addMessage('system', `❌ Error: ${err.detail || res.statusText}`);
+            } else {
+                const data = await res.json();
+                const content = data?.choices?.[0]?.message?.content || '(no response)';
+                addMessage('assistant', content.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+            }
+
+        } catch (err) {
+            document.getElementById('loadingMsg')?.remove();
+            addMessage('system', `❌ Connection error: ${err.message}. Is the server running on ${BASE_URL()}?`);
+        }
+
+        // Fetch stats to show what was redacted
+        await fetchStats();
+        sendBtn.disabled = false;
+    }
+
+    async function fetchStats() {
+        try {
+            const res = await fetch(`${BASE_URL()}/admin/stats`, {
+                headers: { 'X-Admin-Key': ADMIN_KEY() }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            
+            document.getElementById('statTotal').textContent = data.total_requests;
+            document.getElementById('statEntities').textContent = data.total_entities_redacted;
+            document.getElementById('statBlocked').textContent = data.requests_blocked;
+            document.getElementById('statLatency').textContent = data.avg_latency_ms?.toFixed(1) || '0';
+
+            // Update model badge
+            const badge = document.getElementById('modelBadge');
+            if (data.model_type === 'bert') {
+                badge.className = 'model-badge bert';
+                badge.textContent = 'BERT';
+            } else {
+                badge.className = 'model-badge scratch';
+                badge.textContent = 'BiLSTM-CRF';
+            }
+        } catch (e) {}
+    }
+
+    async function applyConfig() {
+        const toast = document.getElementById('configToast');
+        toast.style.color = 'var(--muted)';
+        toast.textContent = 'Applying...';
+
+        const adminKey = ADMIN_KEY();
+        if (!adminKey) {
+            toast.style.color = 'var(--red)';
+            toast.textContent = 'Admin key required!';
+            return;
+        }
+
+        const payload = {
+            model_type: document.getElementById('modelType').value,
+            confidence_threshold: parseFloat(document.getElementById('threshold').value)
+        };
+
+        try {
+            const res = await fetch(`${BASE_URL()}/admin/config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Admin-Key': adminKey },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                toast.style.color = 'var(--green)';
+                toast.textContent = '✓ Config updated!';
+                await fetchStats();
+            } else {
+                toast.style.color = 'var(--red)';
+                toast.textContent = '✗ Unauthorized';
+            }
+        } catch (e) {
+            toast.style.color = 'var(--red)';
+            toast.textContent = '✗ Connection failed';
+        }
+
+        setTimeout(() => { toast.textContent = ''; }, 3000);
+    }
+
+    // Auto-refresh stats
+    fetchStats();
+    setInterval(fetchStats, 5000);
+</script>
+</body>
+</html>

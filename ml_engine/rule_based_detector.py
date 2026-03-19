@@ -90,6 +90,23 @@ class HexSecretRecognizer(PatternRecognizer):
         super().__init__(supported_entity="API_KEY", patterns=patterns)
 
 
+class CustomSSNRecognizer(PatternRecognizer):
+    def __init__(self):
+        patterns = [
+            Pattern("SSN", r"\b\d{3}-\d{2}-\d{4}\b", 1.0),
+        ]
+        super().__init__(supported_entity="US_SSN", patterns=patterns)
+
+
+class CustomCreditCardRecognizer(PatternRecognizer):
+    def __init__(self):
+        patterns = [
+            Pattern("Credit Card with dashes", r"\b\d{4}-\d{4}-\d{4}-\d{4}\b", 1.0),
+            Pattern("Credit Card with spaces", r"\b\d{4}\s\d{4}\s\d{4}\s\d{4}\b", 1.0),
+            Pattern("Credit Card no separator", r"\b\d{16}\b", 0.6),
+        ]
+        super().__init__(supported_entity="CREDIT_CARD", patterns=patterns)
+
 # ==========================================
 # MAIN DETECTOR CLASS
 # ==========================================
@@ -105,6 +122,8 @@ class RuleBasedDetector:
         self.analyzer.registry.add_recognizer(InternalNetworkRecognizer())
         self.analyzer.registry.add_recognizer(SecretPasswordRecognizer())
         self.analyzer.registry.add_recognizer(HexSecretRecognizer())
+        self.analyzer.registry.add_recognizer(CustomSSNRecognizer())
+        self.analyzer.registry.add_recognizer(CustomCreditCardRecognizer())
         
         # Map Presidio entities to our standard schema
         self.entity_mapping = {

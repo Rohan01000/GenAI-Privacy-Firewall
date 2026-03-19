@@ -173,7 +173,7 @@ if __name__ == "__main__":
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="eval_f1",
-        logging_dir="models/bert_logs",
+        logging_dir=None,
         logging_steps=50,
         fp16=True if device_has_cuda else False,
         report_to="none" # Disable external logging like WandB for this standalone script
@@ -188,7 +188,7 @@ if __name__ == "__main__":
         args=training_args,
         train_dataset=hf_dataset["train"],
         eval_dataset=hf_dataset["validation"],
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=data_collator,
         compute_metrics=get_compute_metrics(idx2label)
     )

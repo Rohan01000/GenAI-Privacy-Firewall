@@ -174,7 +174,7 @@ uvicorn main:app --reload --port 8000 --host 0.0.0.0
 #### Option B: Demo Script
 
 ```bash
-python demo/run_demo.py
+python  -m demo.run_demo
 ```
 
 ---

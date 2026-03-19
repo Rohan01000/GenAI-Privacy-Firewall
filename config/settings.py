@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     model_type: str = "scratch"
     confidence_threshold: float = 0.85
     admin_secret_key: str = "changeme"
+    ollama_api_key: str = ""  
 
     model_config = SettingsConfigDict(env_file=".env")
 

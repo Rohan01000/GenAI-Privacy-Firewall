@@ -201,12 +201,16 @@ def run_robustness_tests(scratch_model, bert_model) -> dict:
     # Case 1: Long
     base_long = "Contact Alice at alice@test.com. "
     long_sentences = [base_long * 20] * 10
-    long_gt = [[
-        {"entity_type": "PERSON", "start": i*33 + 8, "end": i*33 + 13},
-        {"entity_type": "EMAIL", "start": i*33 + 17, "end": i*33 + 31}
-    ] for _ in range(10) for i in range(20)]
-    # Regroup GT per sentence
-    long_gt_grouped = [long_gt[i*20:(i+1)*20] for i in range(10)]
+    long_gt_grouped = []
+    for _ in range(10):
+        sentence_gt = []
+        curr = 0
+        for i in range(20):
+            start_person = base_long * i
+            pos = len(start_person)
+            sentence_gt.append({"entity_type": "PERSON", "start": pos + 8, "end": pos + 13, "value": "Alice"})
+            sentence_gt.append({"entity_type": "EMAIL", "start": pos + 17, "end": pos + 31, "value": "alice@test.com"})
+        long_gt_grouped.append(sentence_gt)
 
     # Case 2: Mixed
     mixed_text = "User Alice Brown (alice@test.com) called 555-123-4567 using card 1234-5678-9012-3456 from IP 192.168.1.1."
