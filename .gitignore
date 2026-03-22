@@ -1,32 +1,6 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-venv/
-*.egg-info/
-
-# Environment
 .env
-
-# Logs
-*.log
-models/bert_logs/
-
-# Demo temp files
-demo/mock_llm_server.py
-
-# OS
-.DS_Store
-Thumbs.db
-
-# VS Code
-.vscode/
-
-# Training curves (optional - keep if you want them)
-# models/loss_curve.png
-# models/f1_curve.png
-
-# Keep models but exclude vocab with fake keys
-models/vocab.json
-
-models/
+__pycache__
+.claude
+.venv
+model/__pycache__
+server/__pycache__

@@ -1,0 +1,11 @@
+{
+  "word_embed_dim": 100,
+  "char_embed_dim": 30,
+  "char_cnn_out": 50,
+  "hidden_size": 256,
+  "num_lstm_layers": 2,
+  "dropout": 0.3,
+  "vocab_size": 7228,
+  "char_vocab_size": 80,
+  "num_tags": 11
+}

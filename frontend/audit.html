@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GenAI Privacy Firewall - Audit Log</title>
+    <style>
+        :root {
+            --bg: #1a1a2e; --card: #16213e; --text: #ffffff; --muted: #a0a0b0;
+            --green: #00d4aa; --red: #ff4757; --purple: #9b59b6; --orange: #f39c12;
+            --border: #2a2a4a; --blue: #0f3460;
+        }
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);padding:20px;}
+        .container{max-width:1400px;margin:0 auto;}
+
+        .header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--border);padding-bottom:12px;margin-bottom:20px;}
+        .header h1{font-size:22px;}
+        .header-right{display:flex;align-items:center;gap:12px;}
+        .nav{display:flex;gap:12px;}
+        .nav a{color:var(--muted);text-decoration:none;font-size:13px;padding:5px 10px;border-radius:6px;}
+        .nav a:hover{color:var(--green);}
+        .nav a.active{color:var(--green);}
+        .dot{width:10px;height:10px;border-radius:50%;background:var(--red);}
+        .dot.ok{background:var(--green);}
+        .updated{font-size:12px;color:var(--muted);}
+
+        .filter-bar{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center;}
+        .fbtn{padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:13px;font-weight:500;transition:all 0.2s;}
+        .fbtn:hover{border-color:var(--green);color:var(--text);}
+        .fbtn.active{background:var(--blue);border-color:var(--blue);color:#fff;}
+        .fsep{width:1px;height:24px;background:var(--border);margin:0 4px;}
+        .fcount{margin-left:auto;font-size:13px;color:var(--muted);}
+
+        .acard{background:var(--card);border-radius:8px;margin-bottom:16px;overflow:hidden;box-shadow:0 4px 6px rgba(0,0,0,0.3);}
+        .acard-hdr{display:flex;justify-content:space-between;align-items:center;padding:10px 20px;border-bottom:1px solid var(--border);font-size:13px;color:var(--muted);}
+        .acard-hdr .meta{display:flex;gap:14px;align-items:center;}
+        .badge-s{padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;}
+        .badge-r{background:rgba(243,156,18,0.2);color:var(--orange);}
+        .badge-c{background:rgba(0,212,170,0.15);color:var(--green);}
+
+        .panes{display:grid;grid-template-columns:1fr 1fr;}
+        .pane{padding:14px 20px;font-size:14px;line-height:1.7;white-space:pre-wrap;word-break:break-word;}
+        .pane-orig{border-right:1px solid var(--border);}
+        .pane-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:6px;}
+        .pii{background:rgba(255,71,87,0.25);color:var(--red);padding:1px 4px;border-radius:3px;font-weight:500;}
+        .ph{background:rgba(0,212,170,0.2);color:var(--green);padding:1px 4px;border-radius:3px;font-weight:500;}
+
+        .estrip{display:flex;flex-wrap:wrap;gap:8px;padding:10px 20px;border-top:1px solid var(--border);background:rgba(0,0,0,0.15);}
+        .echip{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:14px;background:rgba(255,255,255,0.05);border:1px solid var(--border);}
+        .echip .et{color:var(--purple);font-weight:600;font-size:10px;text-transform:uppercase;}
+        .echip .eo{color:var(--red);} .echip .ep{color:var(--green);} .echip .ea{color:var(--muted);}
+
+        .empty-s{text-align:center;padding:80px 20px;color:var(--muted);}
+        .empty-s h2{margin-bottom:8px;font-size:20px;color:var(--text);}
+
+        @media(max-width:768px){.panes{grid-template-columns:1fr;}.pane-orig{border-right:none;border-bottom:1px solid var(--border);}}
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>Audit Log</h1>
+        <div class="header-right">
+            <div class="nav">
+                <a href="/dashboard.html">Dashboard</a>
+                <a href="/chat.html">Chat</a>
+                <a href="/audit.html" class="active">Audit</a>
+            </div>
+            <span class="dot" id="statusDot"></span>
+            <span class="updated" id="lastUpdated">Connecting...</span>
+        </div>
+    </div>
+
+    <div class="filter-bar">
+        <button class="fbtn active" data-filter="all">All</button>
+        <button class="fbtn" data-filter="redacted">Redacted</button>
+        <button class="fbtn" data-filter="clean">Clean</button>
+        <div class="fsep"></div>
+        <span id="entityFilters"></span>
+        <span class="fcount" id="resultCount"></span>
+    </div>
+
+    <div id="auditCards"></div>
+</div>
+
+<script>
+    const BASE = "http://localhost:8000";
+    let data = [], activeFilter = "all", activeEntity = null;
+
+    document.querySelectorAll(".fbtn[data-filter]").forEach(b => {
+        b.addEventListener("click", () => {
+            document.querySelectorAll(".fbtn").forEach(x => x.classList.remove("active"));
+            b.classList.add("active");
+            activeFilter = b.dataset.filter; activeEntity = null; render();
+        });
+    });
+
+    function setEntityFilter(type) {
+        document.querySelectorAll(".fbtn").forEach(x => x.classList.remove("active"));
+        activeFilter = "entity"; activeEntity = type;
+        document.querySelector(`.fbtn[data-entity="${type}"]`)?.classList.add("active");
+        render();
+    }
+
+    async function fetchAudit() {
+        const dot = document.getElementById("statusDot");
+        try {
+            const r = await fetch(`${BASE}/audit/requests?limit=100`);
+            if (!r.ok) { dot.classList.remove("ok"); return; }
+            data = await r.json();
+            dot.classList.add("ok");
+            document.getElementById("lastUpdated").textContent = "Updated " + new Date().toLocaleTimeString();
+            buildEntityBtns(); render();
+        } catch { dot.classList.remove("ok"); document.getElementById("lastUpdated").textContent = "Connection error"; }
+    }
+
+    function buildEntityBtns() {
+        const types = new Set();
+        data.forEach(e => (e.entities||[]).forEach(x => types.add(x.entity_type)));
+        document.getElementById("entityFilters").innerHTML = [...types].sort().map(t =>
+            `<button class="fbtn${activeEntity===t?' active':''}" data-entity="${t}" onclick="setEntityFilter('${t}')">${t}</button>`
+        ).join("");
+    }
+
+    function filter(d) {
+        return d.filter(e => {
+            if (activeFilter === "redacted") return e.redaction_applied;
+            if (activeFilter === "clean") return !e.redaction_applied;
+            if (activeFilter === "entity" && activeEntity) return (e.entities||[]).some(x => x.entity_type === activeEntity);
+            return true;
+        });
+    }
+
+    function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+    function hlOrig(text, entities) {
+        if (!entities || !entities.length) return esc(text);
+        const spans = [];
+        entities.forEach(e => { const v = e.original; if (!v) return; let i = 0; while (true) { const idx = text.indexOf(v, i); if (idx === -1) break; spans.push({s:idx,e:idx+v.length}); i = idx + v.length; } });
+        if (!spans.length) return esc(text);
+        spans.sort((a,b) => a.s - b.s);
+        const m = [spans[0]]; for (let i=1;i<spans.length;i++){const l=m[m.length-1];if(spans[i].s<=l.e)l.e=Math.max(l.e,spans[i].e);else m.push(spans[i]);}
+        let r = "", c = 0;
+        m.forEach(s => { r += esc(text.slice(c,s.s)) + `<span class="pii">${esc(text.slice(s.s,s.e))}</span>`; c = s.e; });
+        return r + esc(text.slice(c));
+    }
+
+    function hlRedacted(text) { return esc(text).replace(/\[([A-Z_]+(?:_\d+)?)\]/g, '<span class="ph">[$1]</span>'); }
+
+    function render() {
+        const f = filter(data);
+        document.getElementById("resultCount").textContent = `${f.length} of ${data.length} requests`;
+        const el = document.getElementById("auditCards");
+        if (!f.length) { el.innerHTML = `<div class="empty-s"><h2>No entries${activeFilter!=="all"?" matching filter":""}</h2><p>Send prompts through the firewall to see them here.</p></div>`; return; }
+        el.innerHTML = f.map(e => {
+            const ts = new Date(e.timestamp).toLocaleString();
+            const id = (e.request_id||"").split("-")[0];
+            const ents = e.entities||[];
+            const strip = ents.length ? `<div class="estrip">${ents.map(x => `<div class="echip"><span class="et">${x.entity_type}</span><span class="eo">${esc(x.original||"")}</span><span class="ea">&rarr;</span><span class="ep">${esc(x.placeholder||"")}</span></div>`).join("")}</div>` : "";
+            return `<div class="acard"><div class="acard-hdr"><div class="meta"><span>${ts}</span><span style="font-family:monospace;">#${id}</span><span>${e.detection_source||""}</span><span>${ents.length} entit${ents.length===1?"y":"ies"}</span><span>${e.latency_ms?e.latency_ms.toFixed(1)+" ms":""}</span></div><span class="badge-s ${e.redaction_applied?"badge-r":"badge-c"}">${e.redaction_applied?"Redacted":"Clean"}</span></div><div class="panes"><div class="pane pane-orig"><div class="pane-lbl">Original</div>${hlOrig(e.original_prompt||"",ents)}</div><div class="pane"><div class="pane-lbl">Redacted</div>${hlRedacted(e.redacted_prompt||"")}</div></div>${strip}</div>`;
+        }).join("");
+    }
+
+    fetchAudit(); setInterval(fetchAudit, 5000);
+</script>
+</body>
+</html>

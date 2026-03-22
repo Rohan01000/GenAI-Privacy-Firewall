@@ -1,0 +1,13 @@
+{
+  "O": 0,
+  "B-API_KEY": 1,
+  "B-CREDIT_CARD": 2,
+  "B-EMAIL": 3,
+  "B-IP_ADDRESS": 4,
+  "B-NAME": 5,
+  "B-PASSWORD": 6,
+  "B-PHONE": 7,
+  "B-SSN": 8,
+  "I-NAME": 9,
+  "I-PHONE": 10
+}

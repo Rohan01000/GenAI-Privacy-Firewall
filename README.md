@@ -1,262 +1,280 @@
-# 🛡️ GenAI Privacy Firewall
+# GenAI Privacy Firewall
 
-An enterprise-grade, ML-powered proxy firewall designed to secure Large Language Model (LLM) interactions.
+A middleware proxy that sits between your chat UI and Ollama. Every prompt passes through a **BiLSTM-CRF + regex** PII detection pipeline — sensitive data is redacted before it ever reaches the LLM. The model trains and runs entirely on your local machine.
 
-This application acts as a secure middleware layer that intercepts outgoing LLM prompts, automatically detects Personally Identifiable Information (PII) or sensitive data, redacts it, and forwards the sanitized prompt to your target LLM.
-
----
-
-## 🎯 Why This Matters
-
-Modern applications frequently send user data to LLM APIs (e.g., OpenAI, Claude).
-Without safeguards, sensitive information like emails, phone numbers, or API keys can leak.
-
-**GenAI Privacy Firewall prevents this by acting as a protective layer between your application and LLMs.**
+```
+You type     →  "My email is rohan@gmail.com and my API key is sk-abc123"
+                              ↓  firewall intercepts
+Ollama gets  →  "My email is [EMAIL_1] and my API key is [API_KEY_1]"
+```
 
 ---
 
-## ✨ Core Features
+## Why This Matters
 
-* **Hybrid PII Detection Engine**
-  Combines rule-based detection (Microsoft Presidio) with ML-based models (BERT / LSTM) for high accuracy.
+Modern apps send user data to LLMs. Without safeguards, sensitive information like emails, SSNs, or API keys can leak to external servers.
 
-* **Smart Result Merging**
-  Prioritizes deterministic matches and supplements them with ML predictions to reduce false positives.
-
-* **Multiple ML Backends**
-  Switch between:
-
-  * Custom NER (LSTM)
-  * Pretrained BERT model
-
-* **Async & Batch Processing**
-  Built with FastAPI and asyncio for concurrent processing.
-
-* **Enterprise Middleware**
-
-  * Audit Logging
-  * Request Timing
-  * Request ID tracking
-
-* **Rate Limiting**
-  Prevents abuse using `slowapi`.
-
-* **Admin Dashboard**
-  Includes `/admin` routes and `/dashboard` for monitoring.
+**GenAI Privacy Firewall prevents this** — it sits as a proxy, scrubs PII from every prompt, and only forwards the sanitized version to the LLM.
 
 ---
 
-## 🧪 Example
+## Core Features
+
+- **Hybrid PII Detection** — regex patterns (high precision for structured data) + BiLSTM-CRF neural model (catches contextual PII)
+- **Locally Trained Model** — the BiLSTM-CRF trains on your machine using synthetic data, no cloud APIs
+- **Real-time Redaction** — PII is replaced with placeholders like `[EMAIL_1]`, `[SSN_1]` before the LLM ever sees it
+- **Audit Log** — every request stored with original vs redacted side-by-side
+- **Live Dashboard** — stats, charts, entity breakdown, request history
+- **Chat UI** — built-in chat interface that shows redaction details after each response
+- **Rate Limiting** — per-IP request throttling
+- **Simple API** — `POST /chat` with JSON messages
+
+---
+
+## Example
 
 **Input:**
+```
+Hi, my email is rohan@gmail.com. My API key is sk-123456abc.
+```
 
+**What Ollama receives:**
 ```
-Hi, my name is Rohan and my email is rohan@gmail.com. My API key is sk-123456.
+Hi, my email is [EMAIL_1]. My API key is [API_KEY_1].
 ```
 
-**Output:**
-
-```
-Hi, my name is [PERSON_1] and my email is [EMAIL_1]. My API key is [API_KEY_1].
-```
+**Detected entities:** EMAIL, API_KEY — visible in the audit log and chat UI.
 
 ---
 
-## 🏗️ Architecture
+## Detection Architecture
 
-The core component is the `CombinedDetector`:
+```
+Incoming prompt
+      │
+      ├──► Regex detector (always runs)
+      │    EMAIL, IP_ADDRESS, CREDIT_CARD, SSN, PHONE, API_KEY, PASSWORD
+      │
+      ├──► BiLSTM-CRF model (if trained model exists)
+      │    Char-CNN + Word Embeddings → BiLSTM → CRF decoding
+      │
+      └──► Merge + Filter
+           • Regex wins on overlapping spans
+           • Placeholders applied: value → [TYPE_N]
+           • Sanitised prompt forwarded to Ollama
+```
 
-1. **Concurrent Execution**
-   Runs rule-based (Presidio) and ML models in parallel.
-
-2. **Rule-Based Priority**
-   Structured data (IPs, keys, SSNs) treated as ground truth.
-
-3. **ML Supplementation**
-   Contextual entities added only when non-overlapping.
-
-4. **Deduplication & Sorting**
-   Final entities cleaned before redaction.
+If the trained model doesn't exist, the server runs in **regex-only mode** automatically.
 
 ---
 
-## 📂 Project Structure
+## How the Model Works
+
+The BiLSTM-CRF is a locally trained neural network for Named Entity Recognition:
+
+1. **Char-CNN** — learns character-level features (catches patterns like `sk-abc123` even if never seen in training)
+2. **Word Embeddings** — learned from the training vocabulary
+3. **Bidirectional LSTM** — reads context left-to-right and right-to-left
+4. **CRF Layer** — ensures label sequence consistency (no `I-EMAIL` without `B-EMAIL` before it)
+
+Trained weights are stored in `best_model.pt` (~13MB, ~3.4M parameters). The model loads once on first request and stays in memory.
+
+---
+
+## Project Structure
 
 ```
-genai-privacy-firewall/
-├── main.py
+GenAI-Privacy-Firewall/
+│
+├── data/
+│   └── generate_dataset.py      ← Faker: generates 5000 labelled PII sentences
+│
+├── model/
+│   ├── bilstm_crf.py            ← BiLSTM + CRF + Char-CNN (PyTorch)
+│   ├── data_loader.py           ← Dataset, vocab builders, encoding helpers
+│   ├── train.py                 ← Training loop → saves to model/saved/
+│   └── saved/                   ← Trained model artifacts
+│       ├── best_model.pt
+│       ├── word_vocab.json
+│       ├── char_vocab.json
+│       ├── label_vocab.json
+│       └── model_config.json
+│
+├── server/
+│   ├── config.py                ← Settings loaded from .env
+│   ├── redactor.py              ← Hybrid PII engine: regex + BiLSTM-CRF
+│   └── main.py                  ← FastAPI server: proxy, stats, audit, serves frontend
+│
+├── frontend/
+│   ├── firewall_chat.html       ← Chat UI
+│   ├── index.html               ← Dashboard (stats, charts, request table)
+│   └── audit.html               ← Audit log (original vs redacted side-by-side)
+│
+├── .env.example                 ← Copy → .env, edit as needed
 ├── requirements.txt
-├── .env.example
-├── README.md
-├── config/
-│   ├── __init__.py
-│   └── settings.py
-├── proxy/
-│   ├── __init__.py
-│   ├── proxy_handler.py
-│   ├── middleware.py
-│   └── admin_routes.py
-├── ml_engine/
-│   ├── __init__.py
-│   ├── scratch_model/
-│   │   ├── __init__.py
-│   │   ├── dataset.py
-│   │   ├── embeddings.py
-│   │   ├── model.py
-│   │   ├── train.py
-│   │   ├── evaluate.py
-│   │   └── inference.py
-│   ├── bert_model/
-│   │   ├── __init__.py
-│   │   ├── train_bert.py
-│   │   └── bert_inference.py
-│   ├── rule_based_detector.py
-│   ├── combined_detector.py
-│   ├── redactor.py
-│   └── model_comparison.py
-├── dashboard/
-│   └── index.html
-├── models/
-│   └── .gitkeep
-├── demo/
-│   └── run_demo.py
-└── tests/
-    ├── __init__.py
-    ├── test_redactor.py
-    ├── test_detector.py
-    └── test_integration.py
+├── setup.py                     ← Setup & launcher script
+└── README.md
 ```
 
 ---
 
-## 🚀 Getting Started
+## Tech Stack
+
+- **Backend:** FastAPI, Uvicorn, httpx
+- **ML/NLP:** PyTorch (BiLSTM-CRF, custom Char-CNN, CRF from scratch)
+- **Data Generation:** Faker
+- **Frontend:** Vanilla HTML/CSS/JS, Chart.js
+- **LLM Backend:** Ollama (local)
+
+---
+
+## Getting Started
 
 ### Prerequisites
 
-* Python 3.10+
-* PyTorch
-* Transformers
-* SpaCy
+| Tool   | Minimum | Notes |
+|--------|---------|-------|
+| Python | 3.10    | 3.11+ recommended |
+| pip    | 23+     | `pip install --upgrade pip` |
+| Ollama | any     | https://ollama.com |
 
----
-
-### 1️⃣ Installation
-
-```bash
-pip install -r requirements.txt
-python -m spacy download en_core_web_lg
-```
-
----
-
-### 2️⃣ Configuration
+### 1. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-#### Key Configurations
+Edit `.env` — set `DEFAULT_MODEL` to whatever model you have pulled in Ollama (e.g. `llama3`).
 
-* `MODEL_TYPE` → `"scratch"` or `"bert"`
-* `PROXY_PORT` → default `8000`
-* `LOG_LEVEL` → `INFO / DEBUG`
-
----
-
-### 3️⃣ Run the Firewall
-
-#### Option A: Development Server
+### 2. Full setup
 
 ```bash
-uvicorn main:app --reload --port 8000 --host 0.0.0.0
+python setup.py setup
 ```
 
-#### Option B: Demo Script
+This runs three stages:
+
+| Stage | What happens |
+|-------|-------------|
+| Install deps | `pip install -r requirements.txt` |
+| Generate data | Creates 5000 synthetic PII sentences using Faker |
+| Train model | Trains BiLSTM-CRF locally (~5-10 min CPU, <2 min GPU) |
+
+### 3. Start Ollama + the firewall
 
 ```bash
-python  -m demo.run_demo
+# Terminal 1
+ollama serve
+
+# Terminal 2
+python setup.py server
 ```
 
----
+### 4. Open the UI
 
-## 📡 API Reference
-
-* `GET /health` → System health + model status
-* `POST /v1/...` → Main proxy endpoints
-* `/admin/...` → Admin routes
-* `GET /dashboard` → Monitoring dashboard
-
----
-
-## 🤖 Model Details
-
-* Supports:
-
-  * Custom NER (LSTM-based)
-  * BERT-based transformer model
-
-* Designed to detect:
-
-  * Names (**PERSON**)
-  * Emails (**EMAIL**)
-  * Phone Numbers (**PHONE**)
-  * SSNs (**SSN**)
-  * Credit Cards (**CREDIT_CARD**)
-  * API Keys (**API_KEY**)
-  * Passwords (**PASSWORD**)
-  * IP Addresses (**IP_ADDRESS**)
-  * Internal Org Names (**ORG_INTERNAL**)
-  * Proprietary Code (**PROPRIETARY_CODE**)
-
-* Trained on a custom labeled dataset with 10 entity classes
-
-* Hybrid approach improves detection accuracy and reduces false positives
+| Page | URL |
+|------|-----|
+| Chat | http://localhost:8000/chat.html |
+| Dashboard | http://localhost:8000/dashboard.html |
+| Audit Log | http://localhost:8000/audit.html |
 
 ---
 
-## 🛠️ Tech Stack
+## Setup Commands
 
-* **Backend:** FastAPI, Uvicorn
-* **ML/NLP:** PyTorch, HuggingFace Transformers, SpaCy
-* **PII Detection:** Microsoft Presidio
-* **Utilities:** slowapi, pydantic-settings
-
----
-
-## 🧪 Testing
-
-```bash
-pytest tests/
-```
-
-Includes:
-
-* Detector tests
-* Redactor tests
-* Integration tests
+| Command | What it does |
+|---------|-------------|
+| `python setup.py setup` | Full setup: install deps + generate data + train model |
+| `python setup.py data` | Generate PII dataset only |
+| `python setup.py train` | Train BiLSTM-CRF model only |
+| `python setup.py server` | Start the FastAPI server (default) |
 
 ---
 
-## 🤝 Sharing Models
+## Frontend Pages
 
-Model files are **not included in the repository**.
+### Chat (`/chat.html`)
+Type a message (or use a quick prompt). The firewall scans for PII, redacts it, forwards to Ollama. The response shows with a redaction details box — what was found and what it was replaced with. Live stats in the sidebar.
 
-To use the project:
+### Dashboard (`/dashboard.html`)
+4 stat cards (total requests, entities redacted, blocked, avg latency). Donut chart for entity type breakdown. Line chart for requests per hour. Live request log table.
 
-1. Download models from shared storage (Drive / HuggingFace)
-2. Place them inside the `models/` directory
-
----
-
-## 🚀 Future Improvements
-
-* Model performance benchmarking
-* Docker containerization
-* Cloud deployment (AWS/GCP)
+### Audit Log (`/audit.html`)
+Every intercepted request as a side-by-side card — original (PII in red) vs redacted (placeholders in green). Entity mapping strip at the bottom. Filter by: All / Redacted / Clean / entity type. Auto-refreshes every 5 seconds.
 
 ---
 
-## 👥 Contributors
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/chat` | Redacts PII from prompt, forwards to Ollama, returns response |
+| `GET` | `/config` | Server config (default model, detection type) |
+| `GET` | `/admin/stats` | Aggregate stats (requests, entities, latency, breakdown) |
+| `GET` | `/admin/recent-requests` | Last 50 requests |
+| `GET` | `/audit/requests?limit=100` | Full audit log with original + redacted prompts |
+| `GET` | `/health` | Liveness check |
+
+All endpoints are open — no authentication required.
+
+---
+
+## Configuration (`.env`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Where Ollama is running |
+| `DEFAULT_MODEL` | `llama3` | Model name sent to Ollama |
+| `HOST` | `0.0.0.0` | Server bind address |
+| `PORT` | `8000` | Server port |
+| `RATE_LIMIT_PER_MIN` | `60` | Requests per minute per IP |
+| `MODEL_DIR` | `model/saved` | Path to trained model artifacts |
+| `CONFIDENCE_THRESHOLD` | `0.80` | Minimum confidence to redact (0.0–1.0) |
+| `MODEL_TYPE` | `scratch` | `scratch` = BiLSTM-CRF + regex, `regex` = regex only |
+
+---
+
+## PII Types Detected
+
+| Entity | Detection | Examples |
+|--------|-----------|----------|
+| EMAIL | Regex + Model | `user@example.com` |
+| PHONE | Regex + Model | `+1-800-555-1234`, `(212) 555-9876` |
+| CREDIT_CARD | Regex + Model | `4532-1234-5678-9012` |
+| SSN | Regex + Model | `123-45-6789` |
+| IP_ADDRESS | Regex + Model | `192.168.1.50` |
+| API_KEY | Regex + Model | `sk-abc123…`, `AKIAIOSFODNN7…`, `ghp_…` |
+| PASSWORD | Regex + Model | `password='Xk9#mNp2!@3'` |
+
+---
+
+## Adding a New PII Type
+
+Example: adding `PASSPORT` detection.
+
+1. Add a generator in `data/generate_dataset.py`: `def gen_passport(): …`
+2. Add sentence templates using `{PASSPORT}` placeholder
+3. Regenerate data: `python setup.py data`
+4. Retrain model: `python setup.py train`
+5. Add a regex pattern in `server/redactor.py` under `REGEX_PATTERNS`
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `ModuleNotFoundError: torchcrf` | `pip install pytorch-crf` |
+| `ModuleNotFoundError: faker` | `pip install faker` |
+| `ModuleNotFoundError: dotenv` | `pip install python-dotenv` |
+| Ollama returns 502 | Run `ollama serve` in a separate terminal |
+| Model not loading | Run `python setup.py train` |
+| Training OOM on CPU | Reduce `BATCH_SIZE` in `model/train.py` (default 32) |
+| Pages show "Connection error" | Make sure server is running on port 8000 |
+
+---
+
+## Contributors
 
 <table>
   <tr>
@@ -315,12 +333,12 @@ To use the project:
 
 ---
 
-## 📌 Author
+## Author
 
-**Rohan Kumar** 🚀
+**Rohan Kumar**
 
 ---
 
-## ⭐ If you found this useful
+## If you found this useful
 
-Give it a star ⭐ and feel free to contribute!
+Give it a star and feel free to contribute!
