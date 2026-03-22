@@ -13,6 +13,7 @@ Run:
   uvicorn server.main:app --reload --port 8000
 """
 
+import logging
 import pathlib
 import time
 import uuid
@@ -31,6 +32,19 @@ from server.config import (
     MODEL_DIR, MODEL_TYPE, OLLAMA_BASE_URL, RATE_LIMIT_PER_MIN,
 )
 from server.redactor import redact, get_model
+
+# ── Silence noisy polling logs ────────────────────────────────────────────────
+logging.getLogger("uvicorn.access").addFilter(
+    type("_PollFilter", (), {
+        "filter": staticmethod(
+            lambda record: not any(
+                p in record.getMessage()
+                for p in ["/admin/stats", "/admin/recent-requests",
+                          "/audit/requests", "/config", "/health"]
+            )
+        )
+    })()
+)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="GenAI Privacy Firewall", version="1.0.0")
@@ -82,6 +96,14 @@ _stats = {
 }
 _rate_buckets: Dict[str, deque] = {}
 
+# ── Logger for chat requests ─────────────────────────────────────────────────
+_log = logging.getLogger("firewall")
+_log.setLevel(logging.INFO)
+if not _log.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("\033[36m[FIREWALL]\033[0m %(message)s"))
+    _log.addHandler(_h)
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _rate_limit(ip: str):
@@ -117,6 +139,13 @@ class ChatRequest(BaseModel):
     temperature: Optional[float] = None
 
 
+# System prompt to keep Ollama responses short
+_SYSTEM_MSG = {
+    "role": "system",
+    "content": "Keep your responses brief and concise. Answer in 2-3 sentences max unless the user asks for detail.",
+}
+
+
 # ── Main proxy endpoint ───────────────────────────────────────────────────────
 @app.post("/chat")
 async def chat(request: Request, body: ChatRequest):
@@ -149,6 +178,17 @@ async def chat(request: Request, body: ChatRequest):
         latency_ms = last_latency
 
     _update_stats(_FakeResult())
+
+    # ── Log: what was sent vs what Ollama will get ───────────────────────────
+    for orig, red in zip(all_originals, redacted_messages):
+        _log.info("ORIGINAL  : %s", orig["content"])
+        _log.info("REDACTED  : %s", red["content"])
+    if all_entities:
+        for e in all_entities:
+            _log.info("  ENTITY  : %s  %r → %s  (source: %s)",
+                       e.entity_type, e.original, e.placeholder, e.source)
+    else:
+        _log.info("  NO PII DETECTED")
 
     # ── Audit log entry ──────────────────────────────────────────────────────
     _orig_flat     = " | ".join(m["content"] for m in all_originals)
@@ -186,9 +226,10 @@ async def chat(request: Request, body: ChatRequest):
     })
 
     # ── Forward to Ollama ─────────────────────────────────────────────────────
+    ollama_messages = [_SYSTEM_MSG] + redacted_messages
     ollama_payload = {
         "model":    model_name,
-        "messages": redacted_messages,
+        "messages": ollama_messages,
         "stream":   False,
     }
     if body.temperature is not None:
@@ -213,6 +254,10 @@ async def chat(request: Request, body: ChatRequest):
         ollama_data.get("message", {}).get("content", "")
         or ollama_data.get("response", "")
     )
+
+    _log.info("RESPONSE  : %s", assistant_text[:200] + ("..." if len(assistant_text) > 200 else ""))
+    _log.info("─" * 60)
+
     return {
         "request_id": request_id,
         "model":      model_name,

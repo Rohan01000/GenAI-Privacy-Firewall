@@ -272,11 +272,14 @@ def _model_detect(text: str, model_redactor: "ModelRedactor") -> List[Entity]:
 # Entity types to ignore (not considered PII for this firewall)
 _IGNORED_ENTITY_TYPES = {"NAME"}
 
-# Pattern to validate model-detected PHONE entities (reject false positives)
+# Patterns to validate model-detected entities (reject false positives)
 _PHONE_PATTERN = re.compile(
     r"(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}"
     r"|\+91[-\s]?\d{10}"
     r"|\d{10,}"
+)
+_EMAIL_PATTERN = re.compile(
+    r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
 )
 
 
@@ -284,12 +287,15 @@ def _filter_entities(entities: List[Entity]) -> List[Entity]:
     """Remove ignored types and model false-positives."""
     filtered = []
     for e in entities:
-        # Skip ignored types like NAME
         if e.entity_type in _IGNORED_ENTITY_TYPES:
             continue
-        # If the model tagged something as PHONE but it doesn't look like one, skip
+        # Model tagged as PHONE but doesn't look like a phone number
         if e.entity_type == "PHONE" and e.source == "model":
             if not _PHONE_PATTERN.fullmatch(e.original.strip()):
+                continue
+        # Model tagged as EMAIL but doesn't contain @
+        if e.entity_type == "EMAIL" and e.source == "model":
+            if not _EMAIL_PATTERN.fullmatch(e.original.strip()):
                 continue
         filtered.append(e)
     return filtered
